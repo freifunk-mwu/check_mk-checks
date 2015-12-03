@@ -13,7 +13,7 @@
 import datetime
 
 # default warn/crit levels for SNR /dB
-ubnt_stations_default_values = (15, 10)
+ubnt_stations_default_values = (12, 9)
 
 # auxiliary
 def convertHexStringToMac(octet):
@@ -24,7 +24,7 @@ def convertOidToMac(oid):
     return ":".join([ "%02X" % int(n) for n in oid.split(".")[1:] ])
 
 def inventory_ubnt_stations(info):
-    info_41112, info_14988 = info
+    info_id, info_41112, info_14988 = info
     for line in info_41112:
         station = convertOidToMac(line[0])
         yield station, "ubnt_stations_default_values"
@@ -32,11 +32,12 @@ def inventory_ubnt_stations(info):
         station = convertOidToMac(line[0])
         yield station, "ubnt_stations_default_values"
 
-def val_new_ubnt_stations(line, maybe_old_fw):
+def val_new_ubnt_stations(item, line, maybe_old_fw):
     if maybe_old_fw:  # FW 7.1.4 !
         divisor = 1000
     else:
         divisor = 1000000
+    this_time = time.time()
     name = line[2]
     signal = saveint(line[3])
     noise = saveint(line[4])
@@ -58,7 +59,7 @@ def val_new_ubnt_stations(line, maybe_old_fw):
         wrapped = True
     if wrapped:
         raise MKCounterWrapped("Counter wrap")
-    return (name, snr, signal, noise, dist, txcap, rxcap, txrate, rxrate)
+    return (name, snr, signal, noise, dist, txcap, rxcap, connt, txrate, rxrate)
 
 def val_old_ubnt_stations(line):
     signal = saveint(line[1])
@@ -67,7 +68,10 @@ def val_old_ubnt_stations(line):
     rxcap = saveint(line[3])/1000000
     return (snr, signal, txcap, rxcap)
 
-def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, txrate, rxrate, mac):
+def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, connt, txrate, rxrate, mac, warn, crit):
+    noise_copy = noise
+    if noise_copy == None:
+        noise_copy = -95
     perfdata = [ 
                 ("SNR /dBm", snr, warn, crit, 0),
                 ("rx capacity /Mbps", rxcap, None, None, 0),
@@ -75,7 +79,7 @@ def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, txrate, rxra
                 ("in /bps", rxrate, None, None, 0),
                 ("out /bps", txrate, None, None, 0),
                 ("connect time /days", connt, None, None, 0),
-                ("signal /dBm", signal, noise+warn, noise+crit, 0),
+                ("signal /dBm", signal, noise_copy+warn, noise_copy+crit, 0),
                 ("noise /dBm", noise, None, None, 0),
                ]
     if noise == None:
@@ -84,7 +88,7 @@ def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, txrate, rxra
     else:
         infotext = " - SNR: %d dB, S/N: %d/%d dBm, capacity RX/TX: %d/%d Mbps, rate RX/TX: %d/%d bps, Dist: %d, Name: %s, MAC: %s" % \
             (snr, signal, noise, rxcap, txcap, rxrate, txrate, dist, name, mac)
-    if anr <= crit:
+    if snr <= crit:
         return (2, "CRIT" + infotext, perfdata)
     elif snr <= warn:
         return (1, "WARN" + infotext, perfdata)
@@ -94,19 +98,17 @@ def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, txrate, rxra
 def check_ubnt_stations(item, params, info):
     warn, crit = params
     info_id, info_41112, info_14988 = info
-    maybe_old_fw = (info_id[0] == "iso.3.6.1.4.1.10002.1") # old fw AND new 7.1.4 announce this
+    maybe_old_fw = (info_id[0] == ".1.3.6.1.4.1.10002.1") # old fw AND new 7.1.4 announce this
     for line in info_41112:
         mac = convertOidToMac(line[0])
         if mac == item:
-            this_time = time.time()
-            name,snr,signal,noise,dist,txcap,rxcap,txrate,rxrate = val_new_ubnt_stations(line. maybe_old_fw)
-            return ret_ubnt_stations(name,snr,signal,noise,dist,txcap,rxcap,txrate,rxrate)
+            name,snr,signal,noise,dist,txcap,rxcap,connt,txrate,rxrate = val_new_ubnt_stations(item, line, maybe_old_fw)
+            return ret_ubnt_stations(name,snr,signal,noise,dist,txcap,rxcap,connt,txrate,rxrate,mac,warn,crit)
     for line in info_14988:
         mac = convertOidToMac(line[0])
         if mac == item:
-            this_time = time.time()
             snr,signal,txcap,rxcap = val_old_ubnt_stations(line)
-            return ret_ubnt_stations(None,snr,signal,None,None,txcap,rxcap,None,None)
+            return ret_ubnt_stations(None,snr,signal,None,None,txcap,rxcap,None,None,None,mac,warn,crit)
     return (3, "UNKNOWN - Station %s not found" % item)
 
 check_info["ubnt_stations"] = {
@@ -118,6 +120,6 @@ check_info["ubnt_stations"] = {
         ( ".1.3.6.1.2.1.1", [ "2.0", "9.1.2.4" ] ),
         ( ".1.3.6.1.4.1.41112.1.4.7.1", [ OID_END, 1, 2, 3, 4, 5, 11, 12, 13, 14, 15 ] ),
         ( ".1.3.6.1.4.1.14988.1.1.1.2.1", [OID_END, 3, 8, 9])
-    ]
-    "snmp_scan_function":	lambda oid: oid(".1.3.6.1.2.1.1.2.0").startswith('.1.3.6.1.4.1.41112.1.4') or oid(".1.3.6.1.2.1.1.2.0").startswith('.1.3.6.1.4.1.10002')
+    ],
+    "snmp_scan_function":	lambda oid: oid(".1.3.6.1.2.1.1.2.0").startswith(".1.3.6.1.4.1.41112.1.4") or oid(".1.3.6.1.2.1.1.2.0").startswith(".1.3.6.1.4.1.10002")
 }
