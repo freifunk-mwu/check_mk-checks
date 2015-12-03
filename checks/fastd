@@ -1,0 +1,159 @@
+#!/usr/bin/python
+# -*- encoding: utf-8; py-indent-offset: 4 -*-
+#
+# This check parses output from fastd agents to monitor fastd parameters.
+#
+# For more information about Check_MK see
+#   http://mathias-kettner.de/check_mk.
+
+# Example output from agent:
+#<<<fastd>>>
+#mainz peers_all 202
+#mainz peers_online 118
+#mainz peers_ipv4 110
+#mainz peers_ipv6 8
+#mainz uptime 30740782
+#mainz tx_bytes 64516559227
+#mainz tx_packets 267994693
+#mainz tx_error_bytes 0
+#mainz tx_error_packets 0
+#mainz tx_dropped_bytes 793704
+#mainz tx_dropped_packets 5955
+#mainz rx_bytes 28089643976
+#mainz rx_packets 153480316
+#wiesbaden peers_all 74
+#wiesbaden peers_online 37
+#wiesbaden peers_ipv4 26
+#wiesbaden peers_ipv6 11
+#wiesbaden uptime 30740851
+#wiesbaden tx_bytes 7794698614
+#wiesbaden tx_packets 25731225
+#wiesbaden tx_error_bytes 0
+#wiesbaden tx_error_packets 0
+#wiesbaden tx_dropped_bytes 0
+#wiesbaden tx_dropped_packets 0
+#wiesbaden rx_bytes 1942991369
+#wiesbaden rx_packets 14728796
+
+factory_settings["fastd_stats_default_levels"] = {
+   'peers_online':  (100,  150),
+}
+
+def parse_fastd(info):
+    instances = {}
+    instance_name = None
+
+    for line in info:
+        if line[0] != instance_name:
+            instance_name = line[0]
+            instance = {}
+            instances[instance_name] = instance
+
+        field = line[1]
+        value = saveint(line[2])
+        instance[field] = value
+    return instances
+
+
+fastd_stats_fields = [
+    'peers_all',
+    'peers_online',
+    'peers_ipv4',
+    'peers_ipv6',
+    'uptime', ]
+
+fastd_traffic_fields = [
+    'tx_bytes',
+    'tx_packets',
+    'tx_error_bytes',
+    'tx_error_packets',
+    'tx_dropped_bytes',
+    'tx_dropped_packets',
+    'rx_bytes',
+    'rx_packets', ]
+
+def inventory_fastd_stats(info):
+    instances = parse_fastd(info)
+    inventory = []
+    for instance_name, instance in instances.items():
+        for field in instance.keys():
+            if field in fastd_stats_fields: # found at least one interesting field
+                cleaned = dict([(f, instance[f]) for f in fastd_stats_fields if f in
+ instance])
+                inventory.append((instance_name, cleaned))
+                break
+    return inventory
+
+def inventory_fastd_traffic(info):
+    instances = parse_fastd(info)
+    inventory = []
+    for instance_name, instance in instances.items():
+        for field in instance.keys():
+            if field in fastd_traffic_fields: # found at least one interesting field
+                cleaned = dict([(f, instance[f]) for f in fastd_traffic_fields if f
+in instance])
+                inventory.append((instance_name, cleaned))
+                break
+    return inventory
+
+def check_fastd_stats(item, params, info):
+    # params is a snapshot of all counters at the point of time of inventory
+    instances = parse_fastd(info)
+    if item not in instances:
+        return 3, "Instance not found"
+    instance = instances[item]
+
+    state = 0
+    infos   = []
+    perfdata = []
+
+    for unit, field, descr in [
+                  ('',       'peers_all',          'Total peers',        ),
+                  ('',       'peers_online',       'Connected peers'     ),
+                  ('',       'peers_ipv4',         'IPv4 peers',         ),
+                  ('',       'peers_ipv6',         'IPv6 peers',         ),
+                  ('',       'uptime',             'Uptime',             )]:
+        if field in instance:
+            value = instance[field]
+            infos.append("%s: %d%s" % (descr, value, unit))
+            perfdata.append((field, value))
+
+    return state, ", ".join(infos), perfdata
+
+def check_fastd_traffic(item, params, info):
+    # params is a snapshot of all counters at the point of time of inventory
+    instances = parse_fastd(info)
+    if item not in instances:
+        return 3, "Instance not found"
+    instance = instances[item]
+
+    state = 0
+    infos   = []
+    perfdata = []
+
+    for unit, field, descr in [
+                  ('',       'tx_bytes',          'Bytes out',          ),
+                  ('',       'tx_packets',        'Packets out'         ),
+                  ('',       'rx_bytes',          'Bytes in',           ),
+                  ('',       'rx_packets',        'Packets in',         )]:
+        if field in instance:
+            value = instance[field]
+            infos.append("%s: %d%s" % (descr, value, unit))
+            perfdata.append((field, value))
+
+    return state, ", ".join(infos), perfdata
+
+check_info["fastd.stats"] = {
+    'check_function':            check_fastd_stats,
+    'inventory_function':        inventory_fastd_stats,
+    'has_perfdata':              True,
+    'service_description':       'fastd %s Peer Stats',
+    'default_levels_variable':   'fastd_stats_default_levels',
+}
+
+check_info["fastd.traffic"] = {
+    'check_function':            check_fastd_traffic,
+    'inventory_function':        inventory_fastd_traffic,
+    'has_perfdata':              True,
+    'service_description':       'fastd %s Traffic Stats',
+}
