@@ -73,14 +73,15 @@ def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, connt, txrat
     if noise_copy == None:
         noise_copy = -95
     perfdata = [ 
-                ("SNR /dBm", snr, warn, crit, 0),
-                ("rx capacity /Mbps", rxcap, None, None, 0),
-                ("tx capacity /Mbps", txcap, None, None, 0),
-                ("in /bps", rxrate, None, None, 0),
-                ("out /bps", txrate, None, None, 0),
-                ("connect time /days", connt, None, None, 0),
-                ("signal /dBm", signal, noise_copy+warn, noise_copy+crit, 0),
-                ("noise /dBm", noise, None, None, 0),
+                ("SNR /dBm", snr, warn, crit),
+                ("rx capacity /Mbps", rxcap),
+                ("tx capacity /Mbps", txcap),
+                ("in /bps", rxrate),
+                ("out /bps", txrate),
+                ("connect time /days", connt),
+                #("signal /dBm", signal, noise_copy+warn, noise_copy+crit, 0),
+                ("signal /dBm", signal, None, None, -100, -50),
+                ("noise /dBm", noise, None, None),
                ]
     if noise == None:
         infotext = " - SNR: approx. %d dB, S: %d dBm, capacity RX/TX: %d/%d Mbps, MAC: %s" % \
@@ -98,7 +99,7 @@ def ret_ubnt_stations(name, snr, signal, noise, dist, txcap, rxcap, connt, txrat
 def check_ubnt_stations(item, params, info):
     warn, crit = params
     info_id, info_41112, info_14988 = info
-    maybe_old_fw = (info_id[0] == ".1.3.6.1.4.1.10002.1") # old fw AND new 7.1.4 announce this
+    maybe_old_fw = (info_id[0][0] == ".1.3.6.1.4.1.10002.1") # old fw AND new 7.1.4 announce this
     for line in info_41112:
         mac = convertOidToMac(line[0])
         if mac == item:
@@ -114,7 +115,7 @@ def check_ubnt_stations(item, params, info):
 check_info["ubnt_stations"] = {
     "check_function":		check_ubnt_stations,
     "inventory_function":	inventory_ubnt_stations,
-    "service_description":	"Station %s",
+    "service_description":	"STA %s",
     "has_perfdata":		True,
     "snmp_info":		[
         ( ".1.3.6.1.2.1.1", [ "2.0", "9.1.2.4" ] ),
