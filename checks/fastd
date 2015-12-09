@@ -35,6 +35,8 @@
 #wiesbaden rx_bytes 1942991369
 #wiesbaden rx_packets 14728796
 
+import datetime
+
 factory_settings["fastd_stats_default_levels"] = {
    'peers_online':  (100,  150),
 }
@@ -130,17 +132,26 @@ def check_fastd_traffic(item, params, info):
     state = 0
     infos   = []
     perfdata = []
+    this_time = time.time()
+    wrapped = False
 
     for unit, field, descr in [
-                  ('',       'tx_bytes',          'Bytes out',          ),
-                  ('',       'tx_packets',        'Packets out'         ),
-                  ('',       'rx_bytes',          'Bytes in',           ),
-                  ('',       'rx_packets',        'Packets in',         )]:
+                  ('bps',       'tx_bytes',          'Bytes per sec out',          ),
+                  ('pps',       'tx_packets',        'Packets per sec out'         ),
+                  ('bps',       'rx_bytes',          'Bytes per sec in',           ),
+                  ('pps',       'rx_packets',        'Packets per sec in',         )]:
         if field in instance:
-            value = instance[field]
-            infos.append("%s: %d%s" % (descr, value, unit))
-            perfdata.append((field, value))
+            abs_value = instance[field]
+            rate = 0
+            try:
+                timediff,rate = get_counter("fastd.traffic.%s.%s" % (item,field), this_time, abs_value)
+            except MKCounterWrapped:
+                wrapped = True
+            infos.append("%s: %d%s" % (descr, rate, unit))
+            perfdata.append((field, rate))
 
+    if wrapped:
+        raise MKCounterWrapped("Counter wrap")
     return state, ", ".join(infos), perfdata
 
 check_info["fastd.stats"] = {
